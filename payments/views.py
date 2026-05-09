@@ -6,7 +6,8 @@ from rest_framework.views import APIView
 from orders.models import Order
 from .models import Payment
 from .serializers import PaymentSerializer, CreatePaymentIntentSerializer
-#from tasks.emails import send_order_confirmation_email
+from payments.tasks import send_order_confirmation_email
+
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -77,7 +78,7 @@ class ConfirmPaymentView(APIView):
         order.status = 'confirmed'
         order.save()
 
-        # send_order_confirmation_email.delay(order.id)
+        send_order_confirmation_email.delay(order.id)
 
         serializer = PaymentSerializer(payment)
         return Response(serializer.data, status=status.HTTP_200_OK)

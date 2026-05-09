@@ -29,7 +29,7 @@ class CartItem(models.Model):
         unique_together = ('cart', 'product')
 
     def __str__(self):
-        return f"{self.quantity} x {self.product.name} in {self.cart.user.username}'s cart"
+        return f"{self.quantity} x {self.product.name if self.product else 'Deleted Product'} in {self.cart.user.username}'s cart"
     
     @property
     def subtotal(self):
@@ -47,6 +47,7 @@ class Order(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     total_price = models.DecimalField(max_digits=10, decimal_places=2)
+    stripe_payment_intent = models.CharField(max_length=255, blank=True)
     shipping_address = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -62,11 +63,11 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
-    price = models.DecimalField(max_digits=10, decimal_places=2) 
+    price_at_purchase = models.DecimalField(max_digits=10, decimal_places=2) 
 
     def __str__(self):
-        return f"{self.quantity} x {self.product.name}"
+        return f"{self.quantity} x {self.product.name if self.product else 'Deleted Product'} in Order #{self.order.id}"
 
     @property
     def total_price(self):
-        return self.quantity * self.price
+        return self.quantity * self.price_at_purchase
