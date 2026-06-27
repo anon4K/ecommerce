@@ -7,7 +7,8 @@ from .models import Profile
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
-        fields = ['phone_number', 'address', 'avatar']
+        fields = ['phone_number', 'address', 'avatar', 'is_vendor', 'shop_name', 'shop_description']
+        read_only_fields = ['is_vendor']
 
 
 class RegisterSerializer(serializers.ModelSerializer):
