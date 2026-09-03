@@ -16,6 +16,8 @@ from pathlib import Path
 from datetime import timedelta
 import os
 
+import whitenoise
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -170,8 +172,10 @@ STORAGES = {
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
-    "STATICFILES_STORAGE": "whitenoise.storage.CompressedManifestStaticFilesStorage",
 }
+
+STATICFILES_STORAGE: "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
 CLOUDINARY_STORAGE = {
     "CLOUD_NAME": config("CLOUDINARY_CLOUD_NAME"),
     "API_KEY": config("CLOUDINARY_API_KEY"),
