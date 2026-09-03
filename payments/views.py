@@ -27,6 +27,7 @@ class CreatePaymentIntentView(APIView):
         intent = stripe.PaymentIntent.create(
             amount=int(order.total_price * 100),
             currency='usd',
+            payment_method_types=['card'],
             metadata={'order_id': order.id}
         )
 
