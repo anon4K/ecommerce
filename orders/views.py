@@ -7,7 +7,8 @@ from .serializers import (
     CartSerializer,
     CartItemSerializer,
     OrderSerializer,
-    CreateOrderSerializer
+    CreateOrderSerializer,
+    VendorOrderItemSerializer,
 )
 
 
@@ -131,3 +132,47 @@ class OrderDetailView(generics.RetrieveAPIView):
 
     def get_queryset(self):
         return Order.objects.filter(user=self.request.user).prefetch_related('items__product')
+
+
+class VendorOrderItemListView(generics.ListAPIView):
+    """Order items belonging to products the logged-in vendor sells.
+    Lets a vendor see and fulfil their part of any order without exposing
+    the rest of that order's contents (which may belong to other vendors).
+    """
+    serializer_class = VendorOrderItemSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return (
+            OrderItem.objects
+            .filter(product__vendor=self.request.user)
+            .select_related('order', 'order__user', 'product')
+            .order_by('-order__created_at')
+        )
+
+
+class VendorOrderItemStatusUpdateView(APIView):
+    """Vendor updates the status of one of their own order items.
+    The parent order's status is recalculated automatically as a side
+    effect of OrderItem.save() — see Order.recalculate_status().
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, item_id):
+        item = get_object_or_404(
+            OrderItem, id=item_id, product__vendor=request.user
+        )
+        new_status = request.data.get('status')
+        valid_statuses = [choice[0] for choice in OrderItem.STATUS_CHOICES]
+
+        if new_status not in valid_statuses:
+            return Response(
+                {'error': f'Status must be one of {valid_statuses}.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        item.status = new_status
+        item.save()
+
+        serializer = VendorOrderItemSerializer(item)
+        return Response(serializer.data)

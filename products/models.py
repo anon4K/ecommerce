@@ -60,5 +60,11 @@ class ProductImage(models.Model):
     is_primary = models.BooleanField(default=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    def save(self, *args, **kwargs):
+        if not self.pk and not ProductImage.objects.filter(product=self.product, is_primary=True).exists():
+            self.is_primary = True
+
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"Image for {self.product.name}"

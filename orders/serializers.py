@@ -36,8 +36,43 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "quantity",
             "price_at_purchase",
             "subtotal",
+            "status",
         ]
-        read_only_fields = ["id", "price_at_purchase"]
+        read_only_fields = ["id", "price_at_purchase", "status"]
+
+
+class VendorOrderItemSerializer(serializers.ModelSerializer):
+    """Read/write view of an order item, scoped to the vendor who owns the product.
+    Exposes just enough order context for the vendor to fulfil their part of it,
+    without giving them the customer's full order (which may contain other
+    vendors' items too).
+    """
+    product_detail = ProductListSerializer(source="product", read_only=True)
+    subtotal = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    order_id = serializers.IntegerField(source="order.id", read_only=True)
+    order_created_at = serializers.DateTimeField(source="order.created_at", read_only=True)
+    customer_username = serializers.CharField(source="order.user.username", read_only=True)
+    shipping_address = serializers.CharField(source="order.shipping_address", read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = [
+            "id",
+            "order_id",
+            "order_created_at",
+            "customer_username",
+            "shipping_address",
+            "product_detail",
+            "quantity",
+            "price_at_purchase",
+            "subtotal",
+            "status",
+        ]
+        read_only_fields = [
+            "id", "order_id", "order_created_at", "customer_username",
+            "shipping_address", "product_detail", "quantity",
+            "price_at_purchase", "subtotal",
+        ]
 
 
 class OrderSerializer(serializers.ModelSerializer):
