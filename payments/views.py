@@ -60,7 +60,12 @@ class ConfirmPaymentView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        order = Order.objects.get(stripe_payment_intent=payment_intent_id)
+        order = Order.objects.get(stripe_payment_intent=payment_intent_id, user=request.user).first()
+        if order is None:
+            return Response(
+                {'error': 'Order not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
         payment, created = Payment.objects.get_or_create(
             order=order,

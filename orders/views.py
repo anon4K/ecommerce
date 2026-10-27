@@ -135,10 +135,7 @@ class OrderDetailView(generics.RetrieveAPIView):
 
 
 class VendorOrderItemListView(generics.ListAPIView):
-    """Order items belonging to products the logged-in vendor sells.
-    Lets a vendor see and fulfil their part of any order without exposing
-    the rest of that order's contents (which may belong to other vendors).
-    """
+
     serializer_class = VendorOrderItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -152,10 +149,7 @@ class VendorOrderItemListView(generics.ListAPIView):
 
 
 class VendorOrderItemStatusUpdateView(APIView):
-    """Vendor updates the status of one of their own order items.
-    The parent order's status is recalculated automatically as a side
-    effect of OrderItem.save() — see Order.recalculate_status().
-    """
+
     permission_classes = [permissions.IsAuthenticated]
 
     def patch(self, request, item_id):

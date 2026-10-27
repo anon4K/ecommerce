@@ -44,9 +44,6 @@ class Order(models.Model):
         ('cancelled', 'Cancelled'),
     ]
 
-    # Progress order used to derive the order-level status from its items.
-    # An order is only as "advanced" as its least-progressed active item —
-    # e.g. it won't show as shipped until every non-cancelled item has shipped.
     STATUS_PROGRESS = ['pending', 'processing', 'shipped', 'delivered']
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
@@ -64,13 +61,7 @@ class Order(models.Model):
         return f"Order {self.id} by {self.user.username}"
 
     def recalculate_status(self):
-        """Derive this order's overall status from its items' individual statuses.
-
-        Rule: cancelled items are ignored unless EVERY item is cancelled (then
-        the whole order is cancelled). Otherwise the order's status is whichever
-        active status is least advanced — so an order with one vendor's item
-        shipped and another still processing shows as "processing" overall.
-        """
+        
         statuses = list(self.items.values_list('status', flat=True))
         if not statuses:
             return

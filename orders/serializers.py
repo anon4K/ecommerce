@@ -42,11 +42,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 
 class VendorOrderItemSerializer(serializers.ModelSerializer):
-    """Read/write view of an order item, scoped to the vendor who owns the product.
-    Exposes just enough order context for the vendor to fulfil their part of it,
-    without giving them the customer's full order (which may contain other
-    vendors' items too).
-    """
+    
     product_detail = ProductListSerializer(source="product", read_only=True)
     subtotal = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     order_id = serializers.IntegerField(source="order.id", read_only=True)

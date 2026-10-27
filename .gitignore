@@ -7,3 +7,5 @@ media/
 staticfiles/
 *.log
 .DS_Store
+fresh-venv/
+test-venv/
