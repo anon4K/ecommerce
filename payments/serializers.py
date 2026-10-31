@@ -7,7 +7,7 @@ class PaymentSerializer(serializers.ModelSerializer):
         model = Payment
         fields = [
             'id', 'order', 'amount', 'status',
-            'stripe_payment_intent_id', 'created_at'
+            'reference', 'created_at'
         ]
         read_only_fields = fields
 

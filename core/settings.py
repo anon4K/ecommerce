@@ -165,8 +165,9 @@ CELERY_RESULT_BACKEND = config("CELERY_BROKER_URL", default="redis://localhost:6
 CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=False, cast=bool)
 CELERY_TASK_EAGER_PROPAGATES = CELERY_TASK_ALWAYS_EAGER
 
-STRIPE_SECRET_KEY = config("STRIPE_SECRET_KEY")
-
+PAYSTACK_SECRET_KEY = config("PAYSTACK_SECRET_KEY")
+FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5173")
+    
 STORAGES = {
     "default": {
         "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",

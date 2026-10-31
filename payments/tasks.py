@@ -17,7 +17,7 @@ def send_order_confirmation_email(order_id):
         return "No user email found."
 
     items_list = "\n".join([
-        f"- {item.quantity} x {item.product.name if item.product else 'Deleted Product'} @ ${item.price_at_purchase}"
+        f"- {item.quantity} x {item.product.name if item.product else 'Deleted Product'} @ ₦{item.price_at_purchase}"
         for item in order.items.all()
     ])
 
@@ -32,7 +32,7 @@ Status: {order.status}
 Items:
 {items_list}
 
-Total: ${order.total_price}
+Total: ₦{order.total_price}
 Shipping to: {order.shipping_address}
 
 We'll notify you when your order ships.

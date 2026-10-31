@@ -1,90 +1,169 @@
-import stripe
+import logging
+import uuid
+from decimal import Decimal
+
+import requests
 from django.conf import settings
+from django.db import transaction
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from orders.models import Order
+
 from .models import Payment
-from .serializers import PaymentSerializer, CreatePaymentIntentSerializer
-from payments.tasks import send_order_confirmation_email
+from .serializers import CreatePaymentIntentSerializer
+from .tasks import send_order_confirmation_email
+
+logger = logging.getLogger(__name__)
+
+PAYSTACK_BASE = "https://api.paystack.co"
 
 
-stripe.api_key = settings.STRIPE_SECRET_KEY
+def paystack_headers():
+    return {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
 
 
-class CreatePaymentIntentView(APIView):
+def to_kobo(amount):
+    return int((amount * 100).quantize(Decimal("1")))
+
+
+class InitializePaymentView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         serializer = CreatePaymentIntentSerializer(
-            data=request.data,
-            context={'request': request}
+            data=request.data, context={"request": request}
         )
         serializer.is_valid(raise_exception=True)
+        order = serializer.context["order"]
 
-        order = serializer.context['order']
+        if not request.user.email:
+            return Response(
+                {"error": "Your account needs an email address to pay."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        intent = stripe.PaymentIntent.create(
-            amount=int(order.total_price * 100),
-            currency='usd',
-            payment_method_types=['card'],
-            metadata={'order_id': order.id}
+        reference = f"order{order.id}-{uuid.uuid4().hex[:12]}"
+
+        try:
+            resp = requests.post(
+                f"{PAYSTACK_BASE}/transaction/initialize",
+                headers=paystack_headers(),
+                json={
+                    "email": request.user.email,
+                    "amount": to_kobo(order.total_price),
+                    "currency": "NGN",
+                    "reference": reference,
+                    "callback_url": f"{settings.FRONTEND_URL}/payment/callback",
+                    "metadata": {"order_id": order.id},
+                },
+                timeout=20,
+            )
+            body = resp.json()
+        except (requests.RequestException, ValueError):
+            logger.exception("Paystack initialize request failed")
+            return Response(
+                {"error": "Could not reach the payment provider. Please try again."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        if resp.status_code != 200 or not body.get("status"):
+            logger.error("Paystack initialize rejected: %s", body)
+            return Response(
+                {"error": "Could not start the payment. Please try again."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        Payment.objects.update_or_create(
+            order=order,
+            defaults={
+                "user": request.user,
+                "reference": reference,
+                "amount": order.total_price,
+                "status": "pending",
+            },
         )
 
-        order.stripe_payment_intent = intent['id']
-        order.save()
+        return Response(
+            {
+                "authorization_url": body["data"]["authorization_url"],
+                "reference": reference,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
-        return Response({
-            'client_secret': intent['client_secret'],
-            'payment_intent_id': intent['id'],
-        }, status=status.HTTP_201_CREATED)
 
-
-class ConfirmPaymentView(APIView):
+class VerifyPaymentView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        payment_intent_id = request.data.get('payment_intent_id')
-
-        if not payment_intent_id:
+        reference = request.data.get("reference")
+        if not reference:
             return Response(
-                {'error': 'payment_intent_id is required.'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": "reference is required."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        intent = stripe.PaymentIntent.retrieve(payment_intent_id)
-
-        if intent['status'] != 'succeeded':
+        payment = Payment.objects.filter(
+            reference=reference, user=request.user
+        ).first()
+        if payment is None:
             return Response(
-                {'error': f"Payment not successful. Status: {intent['status']}"},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": "Payment not found."}, status=status.HTTP_404_NOT_FOUND
             )
 
-        order = Order.objects.get(stripe_payment_intent=payment_intent_id, user=request.user).first()
-        if order is None:
+        if payment.status == "completed":
+            return Response({"status": "success", "order_id": payment.order_id})
+
+        try:
+            resp = requests.get(
+                f"{PAYSTACK_BASE}/transaction/verify/{reference}",
+                headers=paystack_headers(),
+                timeout=20,
+            )
+            body = resp.json()
+        except (requests.RequestException, ValueError):
+            logger.exception("Paystack verify request failed")
             return Response(
-                {'error': 'Order not found.'},
-                status=status.HTTP_404_NOT_FOUND
+                {"error": "Could not verify the payment right now. Please try again."},
+                status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        payment, created = Payment.objects.get_or_create(
-            order=order,
-            defaults={
-                'user': request.user,
-                'stripe_payment_intent_id': payment_intent_id,
-                'amount': order.total_price,
-                'status': 'completed'
-            }
-        )
+        if resp.status_code != 200 or not body.get("status"):
+            logger.error("Paystack verify rejected: %s", body)
+            return Response(
+                {"error": "Could not verify the payment right now. Please try again."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
 
-        if not created:
-            payment.status = 'completed'
-            payment.save()
+        data = body["data"]
+        paystack_status = data.get("status")
 
-        order.status = 'confirmed'
-        order.save()
+        if paystack_status == "success":
+            if data.get("amount") != to_kobo(payment.amount) or data.get("currency") != "NGN":
+                logger.error("Paystack amount mismatch for %s: %s", reference, data)
+                return Response(
+                    {"error": "Payment amount mismatch. Please contact support."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        send_order_confirmation_email.delay(order.id)
+            with transaction.atomic():
+                locked = Payment.objects.select_for_update().get(pk=payment.pk)
+                first_time = locked.status != "completed"
+                if first_time:
+                    locked.status = "completed"
+                    locked.save(update_fields=["status", "updated_at"])
 
-        serializer = PaymentSerializer(payment)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+            if first_time:
+                try:
+                    send_order_confirmation_email.delay(payment.order_id)
+                except Exception:
+                    logger.exception("Order confirmation email failed")
+
+            return Response({"status": "success", "order_id": payment.order_id})
+
+        if paystack_status in ("failed", "reversed"):
+            payment.status = "failed"
+            payment.save(update_fields=["status", "updated_at"])
+            return Response({"status": "failed", "order_id": payment.order_id})
+
+        return Response({"status": "pending", "order_id": payment.order_id})
